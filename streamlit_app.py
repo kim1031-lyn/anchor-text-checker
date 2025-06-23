@@ -197,12 +197,12 @@ def main_app():
         if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
-            # --- MODIFICATION BLOCK START ---
+            # --- MODIFICATION BLOCK START (Bug Fix for Domain Lock) ---
             
             st.markdown("##### 筛选与导航")
             filter_cols = st.columns([2, 0.5, 0.5, 1.5])
 
-            # --- Part 1: Source Page Navigation ---
+            # Part 1: Source Page Navigation (No changes here)
             with filter_cols[0]:
                 submitted_urls = st.session_state.get('submitted_urls', [])
                 source_options = ["所有来源"] + submitted_urls
@@ -224,31 +224,44 @@ def main_app():
                     if st.session_state.current_source_index < len(source_options) - 1:
                         st.session_state.current_source_index += 1; st.rerun()
 
-            # --- Part 2: Target Domain Filter with Lock ---
+            # Part 2: Target Domain Filter with CORRECTED Lock Logic
             with filter_cols[3]:
-                lock_is_on = st.checkbox("锁定目标域名", key="domain_lock_status")
-                
-                # The dropdown list will always contain ALL possible domains to prevent the locked domain from disappearing.
+                # Check the lock's state from the *previous* run
+                was_locked = st.session_state.get("domain_lock_status", False)
+                # Draw the checkbox and get its *current* state
+                is_now_locked = st.checkbox("锁定目标域名", key="domain_lock_status")
+
                 all_unique_domains = ["所有域名"] + sorted([d for d in st.session_state.url_results_df["目标域名"].unique() if d not in ["---", "N/A"] and pd.notna(d)])
 
-                # Determine which domain should be selected in the dropdown
-                if lock_is_on:
+                # Logic to determine which domain to select
+                domain_to_select = "所有域名"
+                if is_now_locked and not was_locked:
+                    # Case 1: The user JUST checked the box. Capture the current selection from the dropdown.
+                    domain_to_select = st.session_state.get("domain_selector_key", "所有域名")
+                    st.session_state.locked_domain = domain_to_select
+                elif is_now_locked:
+                    # Case 2: The lock was already on. Use the saved value.
                     domain_to_select = st.session_state.get('locked_domain', "所有域名")
                 else:
-                    domain_to_select = st.session_state.get('domain_selector_key', "所有域名")
-                
+                    # Case 3: The lock is off. Use the dropdown's own state.
+                    domain_to_select = st.session_state.get("domain_selector_key", "所有域名")
+
                 try:
                     domain_index = all_unique_domains.index(domain_to_select)
                 except ValueError:
-                    domain_index = 0
+                    domain_index = 0 # Default to "所有域名" if not found
 
-                selected_domain = st.selectbox("筛选目标域名:", options=all_unique_domains, index=domain_index, key='domain_selector_key')
+                selected_domain = st.selectbox(
+                    "筛选目标域名:",
+                    options=all_unique_domains,
+                    index=domain_index,
+                    key='domain_selector_key'
+                )
 
-                # Update the locked state after the selectbox is drawn
-                if lock_is_on:
+                # If the lock is on, ensure the saved value is updated in case the user
+                # changes the selection while the lock is active.
+                if is_now_locked:
                     st.session_state.locked_domain = selected_domain
-                elif 'locked_domain' in st.session_state:
-                    del st.session_state['locked_domain']
 
             # --- Part 3: Apply Filters to DataFrame ---
             df_to_display = st.session_state.url_results_df.copy()
@@ -259,7 +272,7 @@ def main_app():
             
             # --- MODIFICATION BLOCK END ---
 
-            gb = GridOptionsBuilder.from_dataframe(df_to_display) # Use the fully filtered dataframe
+            gb = GridOptionsBuilder.from_dataframe(df_to_display)
             gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False)
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=300)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
