@@ -9,9 +9,10 @@ import streamlit.components.v1 as components
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- 页面基础设置 ---
-st.set_page_config(page_title="CheckPlus", layout="wide")
+st.set_page_config(page_title="Time is Gold", layout="wide")
 
 # --- 样式定义 ---
+# 这个 markdown 块现在只包含通用样式
 st.markdown("""
 <style>
     .stButton>button {
@@ -143,7 +144,45 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckPlus (最终版)")
+    # ========= 新增：使用st.markdown和自定义CSS来创建更漂亮的标题 =========
+    st.markdown(
+        """
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
+            
+            .title-container {
+                padding: 1.5rem 2rem;
+                border-radius: 15px;
+                text-align: center;
+                color: white;
+                background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364);
+                background-size: 400% 400%;
+                animation: gradientBG 15s ease infinite;
+                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+            }
+            
+            .title-container h1 {
+                font-family: 'Cinzel', serif;
+                font-size: 3rem;
+                letter-spacing: 0.1em;
+                text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.6);
+            }
+            
+            @keyframes gradientBG {
+                0% { background-position: 0% 50%; }
+                50% { background-position: 100% 50%; }
+                100% { background-position: 0% 50%; }
+            }
+        </style>
+
+        <div class="title-container">
+            <h1>TIME is GOLD</h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.write("") # 增加一些间距
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -156,13 +195,10 @@ def main_app():
         if 'submitted_urls' not in st.session_state:
             st.session_state.submitted_urls = []
 
-
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
-            # ========= 修改部分：不再排序，而是按输入顺序去重 =========
             raw_urls = [u.strip() for u in url_input.split('\n') if u.strip()]
-            # 使用dict.fromkeys来去重并保持顺序
             urls = list(dict.fromkeys(raw_urls))
-            st.session_state.submitted_urls = urls # 保存用户提交的URL顺序
+            st.session_state.submitted_urls = urls
             
             if not urls:
                 st.warning("请输入至少一个有效网址。")
@@ -199,9 +235,7 @@ def main_app():
                     st.warning("未能从任何网址中提取到有效链接或所有链接均抓取失败。")
                     st.session_state.url_results_df = pd.DataFrame()
                 else:
-                    # 将结果转换为DataFrame，并根据原始输入顺序进行排序
                     temp_df = pd.DataFrame(all_results)
-                    # 将“来源页面”列转换为category类型，并指定顺序
                     temp_df['来源页面'] = pd.Categorical(temp_df['来源页面'], categories=urls, ordered=True)
                     st.session_state.url_results_df = temp_df.sort_values('来源页面')
         
@@ -210,23 +244,20 @@ def main_app():
             
             df_to_filter = st.session_state.url_results_df.copy()
             
-            # ========= 修改部分：筛选框的来源也按输入顺序排列 =========
             col1, col2 = st.columns(2)
             with col1:
-                # 直接使用保存的URL顺序来创建筛选选项
                 source_options = ["所有来源"] + st.session_state.submitted_urls
                 selected_source = st.selectbox("筛选来源页面:", source_options)
                 if selected_source != "所有来源":
                     df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
             with col2:
-                # 目标域名的顺序可以按出现顺序
                 domain_options = ["所有域名"] + list(df_to_filter["目标域名"].unique())
                 selected_domain = st.selectbox("筛选目标域名:", domain_options)
                 if selected_domain != "所有域名":
                     df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
 
             gb = GridOptionsBuilder.from_dataframe(df_to_filter)
-            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False) # 默认禁用排序
+            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False)
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=300)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
             grid_options = gb.build()
