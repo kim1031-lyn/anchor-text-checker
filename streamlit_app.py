@@ -37,14 +37,12 @@ class CopyButtonRenderer {
         this.eGui.style.justifyContent = 'space-between';
         
         const text = document.createElement('span');
-        // 防止长文本溢出
         text.style.whiteSpace = 'normal';
         text.style.overflow = 'hidden';
         text.style.textOverflow = 'ellipsis';
         text.innerText = params.value;
         this.eGui.appendChild(text);
 
-        // 只为非错误提示信息添加复制按钮
         if (params.value !== '无法抓取，需要手动打开检查。') {
             const button = document.createElement('button');
             button.innerText = '复制';
@@ -145,7 +143,7 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckPlus (稳定版)")
+    st.title("🚀 CheckPlus (最终版)")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -155,9 +153,17 @@ def main_app():
         
         if 'url_results_df' not in st.session_state:
             st.session_state.url_results_df = pd.DataFrame()
+        if 'submitted_urls' not in st.session_state:
+            st.session_state.submitted_urls = []
+
 
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
-            urls = sorted(list(set([u.strip() for u in url_input.split('\n') if u.strip()])))
+            # ========= 修改部分：不再排序，而是按输入顺序去重 =========
+            raw_urls = [u.strip() for u in url_input.split('\n') if u.strip()]
+            # 使用dict.fromkeys来去重并保持顺序
+            urls = list(dict.fromkeys(raw_urls))
+            st.session_state.submitted_urls = urls # 保存用户提交的URL顺序
+            
             if not urls:
                 st.warning("请输入至少一个有效网址。")
             else:
@@ -179,7 +185,7 @@ def main_app():
                     
                     elif status == 'failure':
                         all_results.append({
-                            "来源页面": data, # data is the failed URL
+                            "来源页面": data,
                             "文章上线时间": "---",
                             "锚文本": "无法抓取，需要手动打开检查。",
                             "目标链接": "无法抓取，需要手动打开检查。",
@@ -193,27 +199,34 @@ def main_app():
                     st.warning("未能从任何网址中提取到有效链接或所有链接均抓取失败。")
                     st.session_state.url_results_df = pd.DataFrame()
                 else:
-                    st.session_state.url_results_df = pd.DataFrame(all_results)
+                    # 将结果转换为DataFrame，并根据原始输入顺序进行排序
+                    temp_df = pd.DataFrame(all_results)
+                    # 将“来源页面”列转换为category类型，并指定顺序
+                    temp_df['来源页面'] = pd.Categorical(temp_df['来源页面'], categories=urls, ordered=True)
+                    st.session_state.url_results_df = temp_df.sort_values('来源页面')
         
         if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
             df_to_filter = st.session_state.url_results_df.copy()
             
+            # ========= 修改部分：筛选框的来源也按输入顺序排列 =========
             col1, col2 = st.columns(2)
             with col1:
-                source_options = ["所有来源"] + list(df_to_filter["来源页面"].unique())
+                # 直接使用保存的URL顺序来创建筛选选项
+                source_options = ["所有来源"] + st.session_state.submitted_urls
                 selected_source = st.selectbox("筛选来源页面:", source_options)
                 if selected_source != "所有来源":
                     df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
             with col2:
+                # 目标域名的顺序可以按出现顺序
                 domain_options = ["所有域名"] + list(df_to_filter["目标域名"].unique())
                 selected_domain = st.selectbox("筛选目标域名:", domain_options)
                 if selected_domain != "所有域名":
                     df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
 
             gb = GridOptionsBuilder.from_dataframe(df_to_filter)
-            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=True)
+            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False) # 默认禁用排序
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=300)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
             grid_options = gb.build()
@@ -226,7 +239,7 @@ def main_app():
                 width='100%',
                 theme='streamlit',
                 enable_enterprise_modules=False,
-                key='result_grid' # Add a key to prevent state issues
+                key='result_grid' 
             )
             
             csv = convert_df_to_csv(st.session_state.url_results_df) 
