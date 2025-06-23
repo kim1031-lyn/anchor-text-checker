@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import docx # 导入处理word文档的库
+import mammoth # 导入处理word文档的新库
 import io
 
 # --- 页面基础设置 ---
@@ -73,29 +73,24 @@ def fetch_and_parse_url(url):
         st.error(f"抓取失败: {url} (原因: {e})")
         return []
 
-# --- 功能2: Word文档链接提取 ---
+# --- 功能2: Word文档链接提取 (已修正) ---
 
 def extract_links_from_docx(uploaded_file):
     try:
-        # docx库需要一个文件路径或一个类文件对象，st.uploaded_file可以直接使用
-        document = docx.Document(uploaded_file)
+        # 1. 使用mammoth将word文档内容转换为HTML
+        result = mammoth.convert_to_html(uploaded_file)
+        html_content = result.value
+        
+        # 2. 使用BeautifulSoup解析生成的HTML
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # 3. 从HTML中提取所有<a>标签
         links = []
-        # docx库没有直接获取所有超链接的简单方法，需要遍历段落中的“runs”
-        for para in document.paragraphs:
-            # 获取段落中的超链接
-            # 超链接在docx中是特殊的字段，需要深入XML结构来解析
-            # 一个简化的方法是查找具有超链接关系的run
-            for run in para.runs:
-                 # 这段逻辑比较复杂，因为python-docx没有直接获取链接URL的API
-                 # 我们需要解析XML来找到链接
-                 if run._r.xpath("./w:hyperlink"):
-                    xml_str = run._r.xpath("./w:hyperlink")[0].xml
-                    start_pos = xml_str.find('r:id="') + len('r:id="')
-                    end_pos = xml_str.find('"', start_pos)
-                    rid = xml_str[start_pos:end_pos]
-                    
-                    target_url = document.part.rels[rid].target_ref
-                    links.append({"锚文本": run.text, "链接地址": target_url})
+        for a in soup.find_all('a', href=True):
+            text = a.get_text(strip=True)
+            href = a.get('href')
+            if text and href:
+                links.append({"锚文本": text, "链接地址": href})
 
         if not links:
             st.warning("在文档中未找到任何链接。")
@@ -112,10 +107,8 @@ def extract_links_from_docx(uploaded_file):
 def main_app():
     st.title("🚀 CheckCheckCheck Pro (最终版)")
 
-    # 使用Tabs来分隔不同的功能区
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
-    # --- Tab 1: 网址提取 ---
     with tab1:
         st.header("从网页URL提取链接")
         url_input = st.text_area("输入网址 (每行一个)", height=150, placeholder="https://example.com/page1\nhttps://example.com/page2", key="url_input")
@@ -134,11 +127,11 @@ def main_app():
 
                 if not all_results:
                     st.warning("未能从任何网址中提取到有效链接。")
-                    st.session_state.url_results_df = pd.DataFrame()
+                    if 'url_results_df' in st.session_state:
+                        del st.session_state['url_results_df']
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        # URL结果展示
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
             df_to_show = st.session_state.url_results_df.copy()
@@ -158,7 +151,6 @@ def main_app():
             csv = convert_df_to_csv(df_to_show)
             st.download_button(label="📥 下载当前筛选结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
 
-    # --- Tab 2: Word文档提取 ---
     with tab2:
         st.header("从Word文档 (.docx) 提取链接")
         uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"])
@@ -170,7 +162,7 @@ def main_app():
                     st.success(f"解析完成！共找到 {len(docx_df)} 条链接。")
                     st.dataframe(docx_df, use_container_width=True)
                     
-                    csv_docx = convert_df_to_csv(docx_df) # 复用上面的缓存函数
+                    csv_docx = convert_df_to_csv(docx_df)
                     st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv")
 
 # --- 登录与路由逻辑 (保持不变) ---
