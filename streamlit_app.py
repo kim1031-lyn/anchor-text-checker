@@ -3,9 +3,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import mammoth 
+import mammoth
 import io
-from streamlit_copy_button import copy_button # 导入复制按钮功能
+import streamlit.components.v1 as components # 导入用于嵌入HTML的组件
 
 # --- 页面基础设置 ---
 st.set_page_config(page_title="CheckCheckCheck Pro", layout="wide")
@@ -19,13 +19,37 @@ st.markdown("""
     .stDataFrame {
         width: 100%;
     }
-    /* 复制按钮的样式可以微调 */
-    div[data-testid="stCopyButton"] button {
-        width: auto;
-        padding: 4px 10px;
-    }
 </style>
 """, unsafe_allow_html=True)
+
+
+# --- 新增：创建自定义复制按钮的函数 ---
+def create_copy_button(text_to_copy: str, button_text: str, key: str):
+    """
+    创建一个自定义的HTML按钮，通过JavaScript实现复制到剪贴板的功能。
+    """
+    # 使用唯一的key来区分不同的按钮
+    unique_id = f"copy-btn-{key}"
+    
+    button_html = f"""
+    <button id="{unique_id}" onclick="copyToClipboard(this, '{text_to_copy.replace("'", "\\'").replace(chr(10), " ").replace(chr(13), " ")}')" 
+             style="padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">
+        {button_text}
+    </button>
+    <script>
+    function copyToClipboard(element, text) {{
+        navigator.clipboard.writeText(text).then(function() {{
+            element.innerText = '已复制!';
+            setTimeout(function() {{
+                element.innerText = '{button_text}';
+            }}, 2000);
+        }}, function(err) {{
+            console.error('无法复制: ', err);
+        }});
+    }}
+    </script>
+    """
+    components.html(button_html, height=40)
 
 # --- 核心功能函数 ---
 
@@ -126,7 +150,7 @@ def main_app():
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        df_to_show = pd.DataFrame() # 保证df_to_show一定存在
+        df_to_show = pd.DataFrame() 
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
             df_to_show = st.session_state.url_results_df.copy()
@@ -146,15 +170,12 @@ def main_app():
             csv = convert_df_to_csv(df_to_show)
             st.download_button(label="📥 下载当前筛选结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
         
-        # ========= 新增：单行内容复制功能 =========
         st.markdown("---")
         st.subheader("📋 单行内容复制")
 
         if not df_to_show.empty:
-            # 为了在选择框中显示清晰，我们创建一个临时的显示列
             df_to_show['display_text'] = "锚文本: " + df_to_show['锚文本'].str.slice(0, 30) + "... | 目标: " + df_to_show['目标链接'].str.slice(0, 40) + "..."
             
-            # 使用索引作为选项，这样更稳定
             selected_index = st.selectbox(
                 "选择要复制的行:",
                 options=df_to_show.index,
@@ -169,11 +190,11 @@ def main_app():
                 col_copy_1, col_copy_2 = st.columns(2)
                 with col_copy_1:
                     st.text_area("要复制的锚文本", anchor_text_to_copy, height=100, key="copy_anchor")
-                    copy_button(anchor_text_to_copy, "复制锚文本")
+                    create_copy_button(anchor_text_to_copy, "复制锚文本", "anchor")
                 
                 with col_copy_2:
                     st.text_area("要复制的目标链接", link_to_copy, height=100, key="copy_link")
-                    copy_button(link_to_copy, "复制目标链接")
+                    create_copy_button(link_to_copy, "复制目标链接", "link")
         else:
             st.info("当前没有可复制的数据。")
 
