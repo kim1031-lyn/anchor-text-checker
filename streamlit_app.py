@@ -3,9 +3,10 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import mammoth
+import mammoth 
 import io
-import streamlit.components.v1 as components # 导入用于嵌入HTML的组件
+import streamlit.components.v1 as components
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode # 导入AgGrid相关的组件
 
 # --- 页面基础设置 ---
 st.set_page_config(page_title="CheckCheckCheck Pro", layout="wide")
@@ -16,43 +17,48 @@ st.markdown("""
     .stButton>button {
         width: 100%;
     }
-    .stDataFrame {
-        width: 100%;
-    }
 </style>
 """, unsafe_allow_html=True)
 
+# --- JavaScript代码：用于在单元格内创建复制按钮 ---
+# 这段代码定义了一个类，AG Grid会用它来渲染单元格里的按钮
+js_copy_button_renderer = JsCode("""
+class CopyButtonRenderer {
+    eGui;
+    init(params) {
+        this.eGui = document.createElement('div');
+        this.eGui.style.display = 'flex';
+        this.eGui.style.alignItems = 'center';
+        this.eGui.style.justifyContent = 'space-between';
+        
+        const text = document.createElement('span');
+        text.innerText = params.value;
+        this.eGui.appendChild(text);
 
-# --- 新增：创建自定义复制按钮的函数 ---
-def create_copy_button(text_to_copy: str, button_text: str, key: str):
-    """
-    创建一个自定义的HTML按钮，通过JavaScript实现复制到剪贴板的功能。
-    """
-    # 使用唯一的key来区分不同的按钮
-    unique_id = f"copy-btn-{key}"
-    
-    button_html = f"""
-    <button id="{unique_id}" onclick="copyToClipboard(this, '{text_to_copy.replace("'", "\\'").replace(chr(10), " ").replace(chr(13), " ")}')" 
-             style="padding: 4px 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;">
-        {button_text}
-    </button>
-    <script>
-    function copyToClipboard(element, text) {{
-        navigator.clipboard.writeText(text).then(function() {{
-            element.innerText = '已复制!';
-            setTimeout(function() {{
-                element.innerText = '{button_text}';
-            }}, 2000);
-        }}, function(err) {{
-            console.error('无法复制: ', err);
-        }});
-    }}
-    </script>
-    """
-    components.html(button_html, height=40)
+        const button = document.createElement('button');
+        button.innerText = '复制';
+        button.style.cssText = "padding: 2px 8px; font-size: 12px; margin-left: 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;";
+        
+        button.addEventListener('click', () => {
+            navigator.clipboard.writeText(params.value).then(() => {
+                button.innerText = '已复制!';
+                setTimeout(() => {
+                    button.innerText = '复制';
+                }, 2000);
+            }).catch(err => {
+                console.error('无法复制: ', err);
+            });
+        });
+        this.eGui.appendChild(button);
+    }
+    getGui() {
+        return this.eGui;
+    }
+}
+""")
 
-# --- 核心功能函数 ---
 
+# --- 核心功能函数 (保持不变) ---
 def get_domain_from_url(url):
     try:
         return urlparse(url).hostname.replace('www.', '')
@@ -123,7 +129,7 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckCheckCheck Pro (最终版)")
+    st.title("🚀 CheckCheckCheck Pro (AG Grid版)")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -150,54 +156,37 @@ def main_app():
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        df_to_show = pd.DataFrame() 
+        # --- 使用AG Grid展示结果 ---
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
-            df_to_show = st.session_state.url_results_df.copy()
-            col1, col2 = st.columns(2)
-            with col1:
-                source_options = ["所有来源"] + list(df_to_show["来源页面"].unique())
-                selected_source = st.selectbox("筛选来源页面:", source_options)
-                if selected_source != "所有来源": df_to_show = df_to_show[df_to_show["来源页面"] == selected_source]
-            with col2:
-                domain_options = ["所有域名"] + list(df_to_show["目标域名"].unique())
-                selected_domain = st.selectbox("筛选目标域名:", domain_options)
-                if selected_domain != "所有域名": df_to_show = df_to_show[df_to_show["目标域名"] == selected_domain]
-            st.dataframe(df_to_show, use_container_width=True)
             
+            df_to_show = st.session_state.url_results_df.copy()
+            
+            # AG Grid配置
+            gb = GridOptionsBuilder.from_dataframe(df_to_show)
+            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
+            
+            # 为“锚文本”和“目标链接”这两列配置自定义的单元格渲染器
+            gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=250)
+            gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=400)
+            
+            grid_options = gb.build()
+
+            # 显示AG Grid表格
+            AgGrid(
+                df_to_show,
+                gridOptions=grid_options,
+                allow_unsafe_jscode=True, # 必须允许不安全的JS代码才能执行复制功能
+                height=600,
+                width='100%',
+                theme='streamlit' # 使用Streamlit的默认主题
+            )
+            
+            # 下载功能保持不变
             @st.cache_data
             def convert_df_to_csv(df): return df.to_csv(index=False).encode('utf-8-sig')
-            csv = convert_df_to_csv(df_to_show)
-            st.download_button(label="📥 下载当前筛选结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
-        
-        st.markdown("---")
-        st.subheader("📋 单行内容复制")
-
-        if not df_to_show.empty:
-            df_to_show['display_text'] = "锚文本: " + df_to_show['锚文本'].str.slice(0, 30) + "... | 目标: " + df_to_show['目标链接'].str.slice(0, 40) + "..."
-            
-            selected_index = st.selectbox(
-                "选择要复制的行:",
-                options=df_to_show.index,
-                format_func=lambda x: df_to_show.loc[x, 'display_text']
-            )
-
-            if selected_index is not None:
-                selected_row = df_to_show.loc[selected_index]
-                anchor_text_to_copy = selected_row['锚文本']
-                link_to_copy = selected_row['目标链接']
-
-                col_copy_1, col_copy_2 = st.columns(2)
-                with col_copy_1:
-                    st.text_area("要复制的锚文本", anchor_text_to_copy, height=100, key="copy_anchor")
-                    create_copy_button(anchor_text_to_copy, "复制锚文本", "anchor")
-                
-                with col_copy_2:
-                    st.text_area("要复制的目标链接", link_to_copy, height=100, key="copy_link")
-                    create_copy_button(link_to_copy, "复制目标链接", "link")
-        else:
-            st.info("当前没有可复制的数据。")
-
+            csv = convert_df_to_csv(st.session_state.url_results_df) # 下载完整数据
+            st.download_button(label="📥 下载所有结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
 
     with tab2:
         st.header("从Word文档 (.docx) 提取链接")
