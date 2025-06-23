@@ -6,7 +6,7 @@ from urllib.parse import urljoin, urlparse
 import mammoth 
 import io
 import streamlit.components.v1 as components
-from st_aggrid import AgGrid, GridOptionsBuilder, JsCode # 导入AgGrid相关的组件
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- 页面基础设置 ---
 st.set_page_config(page_title="CheckCheckCheck Pro", layout="wide")
@@ -21,7 +21,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- JavaScript代码：用于在单元格内创建复制按钮 ---
-# 这段代码定义了一个类，AG Grid会用它来渲染单元格里的按钮
 js_copy_button_renderer = JsCode("""
 class CopyButtonRenderer {
     eGui;
@@ -57,8 +56,13 @@ class CopyButtonRenderer {
 }
 """)
 
+# --- 核心功能与辅助函数 ---
 
-# --- 核心功能函数 (保持不变) ---
+@st.cache_data
+def convert_df_to_csv(df):
+    """将DataFrame转换为可下载的CSV文件。"""
+    return df.to_csv(index=False).encode('utf-8-sig')
+
 def get_domain_from_url(url):
     try:
         return urlparse(url).hostname.replace('www.', '')
@@ -129,7 +133,7 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckCheckCheck Pro (AG Grid版)")
+    st.title("🚀 CheckCheckCheck Pro (稳定版)")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -156,36 +160,31 @@ def main_app():
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        # --- 使用AG Grid展示结果 ---
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
-            
             df_to_show = st.session_state.url_results_df.copy()
             
-            # AG Grid配置
             gb = GridOptionsBuilder.from_dataframe(df_to_show)
-            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True)
-            
-            # 为“锚文本”和“目标链接”这两列配置自定义的单元格渲染器
+            gb.configure_default_column(
+                resizable=True, wrapText=True, autoHeight=True, 
+                sortable=True, filter=True
+            )
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=250)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=400)
-            
             grid_options = gb.build()
 
-            # 显示AG Grid表格
+            st.info("💡 使用方法：将鼠标悬停在列标题上，会出现一个三条杠的菜单图标，点击即可进行筛选。")
             AgGrid(
                 df_to_show,
                 gridOptions=grid_options,
-                allow_unsafe_jscode=True, # 必须允许不安全的JS代码才能执行复制功能
+                allow_unsafe_jscode=True,
                 height=600,
                 width='100%',
-                theme='streamlit' # 使用Streamlit的默认主题
+                theme='streamlit',
+                enable_enterprise_modules=False
             )
             
-            # 下载功能保持不变
-            @st.cache_data
-            def convert_df_to_csv(df): return df.to_csv(index=False).encode('utf-8-sig')
-            csv = convert_df_to_csv(st.session_state.url_results_df) # 下载完整数据
+            csv = convert_df_to_csv(st.session_state.url_results_df) 
             st.download_button(label="📥 下载所有结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
 
     with tab2:
@@ -201,12 +200,8 @@ def main_app():
             st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
             st.dataframe(df_docx_to_show, use_container_width=True)
             
-            @st.cache_data
-            def convert_df_to_csv_docx(df): return df.to_csv(index=False).encode('utf-8-sig')
-
-            csv_docx = convert_df_to_csv_docx(df_docx_to_show)
+            csv_docx = convert_df_to_csv(df_docx_to_show) # 使用全局定义的函数
             st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
-
 
 # --- 登录与路由逻辑 (保持不变) ---
 if 'users' not in st.session_state: st.session_state['users'] = {"admin": "1008611"}
