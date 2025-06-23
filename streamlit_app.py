@@ -3,8 +3,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import mammoth # 导入处理word文档的新库
+import mammoth 
 import io
+from streamlit_copy_button import copy_button # 导入复制按钮功能
 
 # --- 页面基础设置 ---
 st.set_page_config(page_title="CheckCheckCheck Pro", layout="wide")
@@ -18,6 +19,11 @@ st.markdown("""
     .stDataFrame {
         width: 100%;
     }
+    /* 复制按钮的样式可以微调 */
+    div[data-testid="stCopyButton"] button {
+        width: auto;
+        padding: 4px 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -28,8 +34,6 @@ def get_domain_from_url(url):
         return urlparse(url).hostname.replace('www.', '')
     except:
         return ''
-
-# --- 功能1: 网页抓取与解析 ---
 
 def extract_publish_date(soup):
     selectors = [
@@ -72,8 +76,6 @@ def fetch_and_parse_url(url):
     except requests.RequestException as e:
         st.error(f"抓取失败: {url} (原因: {e})")
         return []
-
-# --- 功能2: Word文档链接提取 (已修正) ---
 
 def extract_links_from_docx(uploaded_file):
     try:
@@ -124,6 +126,7 @@ def main_app():
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
+        df_to_show = pd.DataFrame() # 保证df_to_show一定存在
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
             df_to_show = st.session_state.url_results_df.copy()
@@ -142,29 +145,56 @@ def main_app():
             def convert_df_to_csv(df): return df.to_csv(index=False).encode('utf-8-sig')
             csv = convert_df_to_csv(df_to_show)
             st.download_button(label="📥 下载当前筛选结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
+        
+        # ========= 新增：单行内容复制功能 =========
+        st.markdown("---")
+        st.subheader("📋 单行内容复制")
 
-    # ========= 修正部分：调整了Tab 2的逻辑 =========
+        if not df_to_show.empty:
+            # 为了在选择框中显示清晰，我们创建一个临时的显示列
+            df_to_show['display_text'] = "锚文本: " + df_to_show['锚文本'].str.slice(0, 30) + "... | 目标: " + df_to_show['目标链接'].str.slice(0, 40) + "..."
+            
+            # 使用索引作为选项，这样更稳定
+            selected_index = st.selectbox(
+                "选择要复制的行:",
+                options=df_to_show.index,
+                format_func=lambda x: df_to_show.loc[x, 'display_text']
+            )
+
+            if selected_index is not None:
+                selected_row = df_to_show.loc[selected_index]
+                anchor_text_to_copy = selected_row['锚文本']
+                link_to_copy = selected_row['目标链接']
+
+                col_copy_1, col_copy_2 = st.columns(2)
+                with col_copy_1:
+                    st.text_area("要复制的锚文本", anchor_text_to_copy, height=100, key="copy_anchor")
+                    copy_button(anchor_text_to_copy, "复制锚文本")
+                
+                with col_copy_2:
+                    st.text_area("要复制的目标链接", link_to_copy, height=100, key="copy_link")
+                    copy_button(link_to_copy, "复制目标链接")
+        else:
+            st.info("当前没有可复制的数据。")
+
+
     with tab2:
         st.header("从Word文档 (.docx) 提取链接")
         uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"], key="docx_uploader")
         
-        # 只有当文件被上传时，才进行解析和显示
         if uploaded_file is not None:
             with st.spinner("正在解析文档..."):
-                # 将解析结果存储在 session_state 中，防止重复解析
                 st.session_state.docx_df = extract_links_from_docx(uploaded_file)
         
-        # 只有当解析结果存在且不为空时，才显示表格和下载按钮
         if 'docx_df' in st.session_state and not st.session_state.docx_df.empty:
             df_docx_to_show = st.session_state.docx_df
             st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
             st.dataframe(df_docx_to_show, use_container_width=True)
             
-            # 确保 convert_df_to_csv 函数在这里也可用
             @st.cache_data
-            def convert_df_to_csv(df): return df.to_csv(index=False).encode('utf-8-sig')
+            def convert_df_to_csv_docx(df): return df.to_csv(index=False).encode('utf-8-sig')
 
-            csv_docx = convert_df_to_csv(df_docx_to_show)
+            csv_docx = convert_df_to_csv_docx(df_docx_to_show)
             st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
 
 
