@@ -25,7 +25,6 @@ js_copy_button_renderer = JsCode("""
 class CopyButtonRenderer {
     eGui;
     init(params) {
-        // 如果单元格没有值，则不渲染任何东西
         if (params.value === null || params.value === undefined) {
             this.eGui = document.createElement('span');
             this.eGui.innerText = '';
@@ -41,21 +40,24 @@ class CopyButtonRenderer {
         text.innerText = params.value;
         this.eGui.appendChild(text);
 
-        const button = document.createElement('button');
-        button.innerText = '复制';
-        button.style.cssText = "padding: 2px 8px; font-size: 12px; margin-left: 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;";
-        
-        button.addEventListener('click', () => {
-            navigator.clipboard.writeText(params.value).then(() => {
-                button.innerText = '已复制!';
-                setTimeout(() => {
-                    button.innerText = '复制';
-                }, 2000);
-            }).catch(err => {
-                console.error('无法复制: ', err);
+        // 只为非错误提示信息添加复制按钮
+        if (params.value !== '无法抓取，需要手动打开检查') {
+            const button = document.createElement('button');
+            button.innerText = '复制';
+            button.style.cssText = "padding: 2px 8px; font-size: 12px; margin-left: 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;";
+            
+            button.addEventListener('click', () => {
+                navigator.clipboard.writeText(params.value).then(() => {
+                    button.innerText = '已复制!';
+                    setTimeout(() => {
+                        button.innerText = '复制';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('无法复制: ', err);
+                });
             });
-        });
-        this.eGui.appendChild(button);
+            this.eGui.appendChild(button);
+        }
     }
     getGui() {
         return this.eGui;
@@ -89,6 +91,7 @@ def extract_publish_date(soup):
         return time_tag.get('datetime').split('T')[0]
     return "未找到"
 
+# ========= 修改部分：函数现在会返回状态和数据 =========
 def fetch_and_parse_url(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -112,10 +115,12 @@ def fetch_and_parse_url(url):
                 "来源页面": url, "文章上线时间": publish_date, "锚文本": text,
                 "目标链接": href, "目标域名": target_domain, "链接类型": follow_type,
             })
-        return anchors_data
+        # 如果成功但没有找到链接，也返回一个明确的空列表
+        return 'success', anchors_data
     except requests.RequestException as e:
+        # 如果失败，返回失败状态和原始URL
         st.error(f"抓取失败: {url} (原因: {e})")
-        return []
+        return 'failure', url
 
 def extract_links_from_docx(uploaded_file):
     try:
@@ -139,29 +144,12 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    # ========= 修改部分：使用st.markdown来创建更漂亮的标题 =========
-    st.markdown(
-        """
-        <div style="
-            background-color: #f0f8ff; 
-            padding: 20px; 
-            border-radius: 10px; 
-            text-align: center;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-        ">
-            <h1 style="color: #0047ab; font-family: 'Garamond', serif; font-size: 3em;">
-                🚀 TIME is Gold
-            </h1>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    st.write("") # 增加一些间距
+    st.title("🚀 CheckPlus (稳定版)")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
     with tab1:
-        st.header("提取链接")
+        st.header("从网页URL提取链接")
         url_input = st.text_area("输入网址 (每行一个)", height=150, placeholder="https://example.com/page1\nhttps://example.com/page2", key="url_input")
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
             urls = [u.strip() for u in url_input.split('\n') if u.strip()]
@@ -170,26 +158,47 @@ def main_app():
             else:
                 all_results = []
                 progress_bar = st.progress(0, text="准备开始抓取...")
+                
+                # ========= 修改部分：新的结果处理逻辑 =========
                 for i, url in enumerate(urls):
-                    progress_bar.progress((i) / len(urls), text=f"正在抓取: {url}")
-                    results = fetch_and_parse_url(url)
-                    if results: all_results.extend(results)
+                    progress_bar.progress((i + 1) / len(urls), text=f"正在处理: {url}")
+                    status, data = fetch_and_parse_url(url)
+                    
+                    if status == 'success':
+                        # 如果成功但没有找到任何链接，也添加一条提示记录
+                        if not data:
+                            all_results.append({
+                                "来源页面": url, "文章上线时间": "N/A", "锚文本": "页面内未找到链接",
+                                "目标链接": "N/A", "目标域名": "N/A", "链接类型": "N/A",
+                            })
+                        else:
+                            all_results.extend(data)
+                    
+                    elif status == 'failure':
+                        # 如果抓取失败，添加用户要求的提示信息
+                        all_results.append({
+                            "来源页面": url,
+                            "文章上线时间": "---",
+                            "锚文本": "无法抓取，需要手动打开检查。",
+                            "目标链接": "无法抓取，需要手动打开检查。",
+                            "目标域名": "---",
+                            "链接类型": "---",
+                        })
+
                 progress_bar.progress(1.0, text="所有任务完成！")
 
                 if not all_results:
-                    st.warning("未能从任何网址中提取到有效链接。")
+                    st.warning("未能从任何网址中提取到有效链接或所有链接均抓取失败。")
                     if 'url_results_df' in st.session_state:
                         del st.session_state['url_results_df']
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        # --- 恢复筛选功能并结合AG Grid展示 ---
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
-            st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
+            st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
             df_to_filter = st.session_state.url_results_df.copy()
             
-            # ========= 恢复下拉选择框进行筛选 =========
             col1, col2 = st.columns(2)
             with col1:
                 source_options = ["所有来源"] + list(df_to_filter["来源页面"].unique())
@@ -202,14 +211,12 @@ def main_app():
                 if selected_domain != "所有域名":
                     df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
 
-            # AG Grid配置
             gb = GridOptionsBuilder.from_dataframe(df_to_filter)
             gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=True)
-            gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=250)
-            gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=400)
+            gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=300)
+            gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
             grid_options = gb.build()
 
-            # 显示AG Grid表格
             AgGrid(
                 df_to_filter,
                 gridOptions=grid_options,
