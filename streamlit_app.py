@@ -9,7 +9,7 @@ import streamlit.components.v1 as components
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # --- 页面基础设置 ---
-st.set_page_config(page_title="CheckCheckCheck Pro", layout="wide")
+st.set_page_config(page_title="CheckPlus", layout="wide")
 
 # --- 样式定义 ---
 st.markdown("""
@@ -139,12 +139,12 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckCheckCheck Pro (最终版)")
+    st.title("🚀Time is Gold ")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
     with tab1:
-        st.header("从网页URL提取链接")
+        st.header("提取链接")
         url_input = st.text_area("输入网址 (每行一个)", height=150, placeholder="https://example.com/page1\nhttps://example.com/page2", key="url_input")
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
             urls = [u.strip() for u in url_input.split('\n') if u.strip()]
