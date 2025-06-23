@@ -37,11 +37,15 @@ class CopyButtonRenderer {
         this.eGui.style.justifyContent = 'space-between';
         
         const text = document.createElement('span');
+        // 防止长文本溢出
+        text.style.whiteSpace = 'normal';
+        text.style.overflow = 'hidden';
+        text.style.textOverflow = 'ellipsis';
         text.innerText = params.value;
         this.eGui.appendChild(text);
 
         // 只为非错误提示信息添加复制按钮
-        if (params.value !== '无法抓取，需要手动打开检查') {
+        if (params.value !== '无法抓取，需要手动打开检查。') {
             const button = document.createElement('button');
             button.innerText = '复制';
             button.style.cssText = "padding: 2px 8px; font-size: 12px; margin-left: 10px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer;";
@@ -91,7 +95,6 @@ def extract_publish_date(soup):
         return time_tag.get('datetime').split('T')[0]
     return "未找到"
 
-# ========= 修改部分：函数现在会返回状态和数据 =========
 def fetch_and_parse_url(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
@@ -115,11 +118,9 @@ def fetch_and_parse_url(url):
                 "来源页面": url, "文章上线时间": publish_date, "锚文本": text,
                 "目标链接": href, "目标域名": target_domain, "链接类型": follow_type,
             })
-        # 如果成功但没有找到链接，也返回一个明确的空列表
         return 'success', anchors_data
     except requests.RequestException as e:
-        # 如果失败，返回失败状态和原始URL
-        st.error(f"抓取失败: {url} (原因: {e})")
+        st.error(f"抓取失败: {url} (原因: {e})", icon="🚨")
         return 'failure', url
 
 def extract_links_from_docx(uploaded_file):
@@ -151,21 +152,23 @@ def main_app():
     with tab1:
         st.header("从网页URL提取链接")
         url_input = st.text_area("输入网址 (每行一个)", height=150, placeholder="https://example.com/page1\nhttps://example.com/page2", key="url_input")
+        
+        if 'url_results_df' not in st.session_state:
+            st.session_state.url_results_df = pd.DataFrame()
+
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
-            urls = [u.strip() for u in url_input.split('\n') if u.strip()]
+            urls = sorted(list(set([u.strip() for u in url_input.split('\n') if u.strip()])))
             if not urls:
                 st.warning("请输入至少一个有效网址。")
             else:
                 all_results = []
                 progress_bar = st.progress(0, text="准备开始抓取...")
                 
-                # ========= 修改部分：新的结果处理逻辑 =========
                 for i, url in enumerate(urls):
                     progress_bar.progress((i + 1) / len(urls), text=f"正在处理: {url}")
                     status, data = fetch_and_parse_url(url)
                     
                     if status == 'success':
-                        # 如果成功但没有找到任何链接，也添加一条提示记录
                         if not data:
                             all_results.append({
                                 "来源页面": url, "文章上线时间": "N/A", "锚文本": "页面内未找到链接",
@@ -175,9 +178,8 @@ def main_app():
                             all_results.extend(data)
                     
                     elif status == 'failure':
-                        # 如果抓取失败，添加用户要求的提示信息
                         all_results.append({
-                            "来源页面": url,
+                            "来源页面": data, # data is the failed URL
                             "文章上线时间": "---",
                             "锚文本": "无法抓取，需要手动打开检查。",
                             "目标链接": "无法抓取，需要手动打开检查。",
@@ -189,12 +191,11 @@ def main_app():
 
                 if not all_results:
                     st.warning("未能从任何网址中提取到有效链接或所有链接均抓取失败。")
-                    if 'url_results_df' in st.session_state:
-                        del st.session_state['url_results_df']
+                    st.session_state.url_results_df = pd.DataFrame()
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
-        if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
+        if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
             df_to_filter = st.session_state.url_results_df.copy()
@@ -224,7 +225,8 @@ def main_app():
                 height=600,
                 width='100%',
                 theme='streamlit',
-                enable_enterprise_modules=False
+                enable_enterprise_modules=False,
+                key='result_grid' # Add a key to prevent state issues
             )
             
             csv = convert_df_to_csv(st.session_state.url_results_df) 
