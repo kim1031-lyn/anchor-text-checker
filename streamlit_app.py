@@ -166,6 +166,7 @@ def main_app():
         if 'submitted_urls' not in st.session_state: st.session_state.submitted_urls = []
 
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
+            # --- (代码块无变化，保持原样) ---
             raw_urls = [u.strip() for u in url_input.split('\n') if u.strip()]
             urls = list(dict.fromkeys(raw_urls))
             st.session_state.submitted_urls = urls
@@ -197,78 +198,100 @@ def main_app():
         if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
-            # --- MODIFICATION BLOCK START (Bug Fix for Domain Lock) ---
+            # --- MODIFICATION BLOCK START (Final Fix using on_change) ---
             
             st.markdown("##### 筛选与导航")
-            filter_cols = st.columns([2, 0.5, 0.5, 1.5])
 
-            # Part 1: Source Page Navigation (No changes here)
+            # --- Part 1: Define Callback Functions ---
+            # These functions explicitly manage state changes when a user interacts with a widget.
+
+            def source_page_change():
+                """Called when the user manually selects a new source page."""
+                st.session_state.current_source_index = st.session_state.source_options.index(st.session_state.source_selector)
+
+            def domain_selection_change():
+                """Called when the user manually selects a new target domain."""
+                # If the lock is on, we must update the locked value.
+                if st.session_state.get("domain_lock_status", False):
+                    st.session_state.locked_domain_value = st.session_state.domain_selector
+            
+            def lock_status_change():
+                """Called when the user checks or unchecks the lock box."""
+                # If the user just turned the lock ON, save the current domain selection.
+                if st.session_state.domain_lock_status:
+                    st.session_state.locked_domain_value = st.session_state.domain_selector
+
+            # --- Part 2: Prepare State and Options ---
+            filter_cols = st.columns([2, 0.5, 0.5, 1.5])
+            
+            # For Source Page
+            st.session_state.source_options = ["所有来源"] + st.session_state.get('submitted_urls', [])
+            if 'current_source_index' not in st.session_state or st.session_state.current_source_index >= len(st.session_state.source_options):
+                st.session_state.current_source_index = 0
+
+            # For Target Domain
+            all_unique_domains = ["所有域名"] + sorted([d for d in st.session_state.url_results_df["目标域名"].unique() if d not in ["---", "N/A"] and pd.notna(d)])
+            if 'locked_domain_value' not in st.session_state:
+                st.session_state.locked_domain_value = "所有域名"
+
+
+            # --- Part 3: Create Widgets and Attach Callbacks ---
+            
+            # Source Page Selector
             with filter_cols[0]:
-                submitted_urls = st.session_state.get('submitted_urls', [])
-                source_options = ["所有来源"] + submitted_urls
-                if 'current_source_index' not in st.session_state:
-                    st.session_state.current_source_index = 0
-                if st.session_state.current_source_index >= len(source_options):
-                    st.session_state.current_source_index = 0
-                def on_selectbox_change():
-                    st.session_state.current_source_index = source_options.index(st.session_state.selectbox_source)
-                selected_source = st.selectbox("筛选来源页面:", options=source_options, index=st.session_state.current_source_index, key='selectbox_source', on_change=on_selectbox_change)
+                selected_source = st.selectbox(
+                    "筛选来源页面:", 
+                    options=st.session_state.source_options, 
+                    index=st.session_state.current_source_index, 
+                    key='source_selector', 
+                    on_change=source_page_change
+                )
+
+            # Navigation Buttons
             with filter_cols[1]:
                 st.write(""); st.write("")
                 if st.button("⬅️ 上一个", use_container_width=True):
                     if st.session_state.current_source_index > 0:
-                        st.session_state.current_source_index -= 1; st.rerun()
+                        st.session_state.current_source_index -= 1
+                        st.rerun()
             with filter_cols[2]:
                 st.write(""); st.write("")
                 if st.button("下一个 ➡️", use_container_width=True):
-                    if st.session_state.current_source_index < len(source_options) - 1:
-                        st.session_state.current_source_index += 1; st.rerun()
+                    if st.session_state.current_source_index < len(st.session_state.source_options) - 1:
+                        st.session_state.current_source_index += 1
+                        st.rerun()
 
-            # Part 2: Target Domain Filter with CORRECTED Lock Logic
+            # Target Domain Selector and Lock
             with filter_cols[3]:
-                # Check the lock's state from the *previous* run
-                was_locked = st.session_state.get("domain_lock_status", False)
-                # Draw the checkbox and get its *current* state
-                is_now_locked = st.checkbox("锁定目标域名", key="domain_lock_status")
-
-                all_unique_domains = ["所有域名"] + sorted([d for d in st.session_state.url_results_df["目标域名"].unique() if d not in ["---", "N/A"] and pd.notna(d)])
-
-                # Logic to determine which domain to select
-                domain_to_select = "所有域名"
-                if is_now_locked and not was_locked:
-                    # Case 1: The user JUST checked the box. Capture the current selection from the dropdown.
-                    domain_to_select = st.session_state.get("domain_selector_key", "所有域名")
-                    st.session_state.locked_domain = domain_to_select
-                elif is_now_locked:
-                    # Case 2: The lock was already on. Use the saved value.
-                    domain_to_select = st.session_state.get('locked_domain', "所有域名")
+                # Determine which domain to display this run
+                if st.session_state.get("domain_lock_status"):
+                    domain_to_select = st.session_state.locked_domain_value
                 else:
-                    # Case 3: The lock is off. Use the dropdown's own state.
-                    domain_to_select = st.session_state.get("domain_selector_key", "所有域名")
-
+                    domain_to_select = st.session_state.get("domain_selector", "所有域名")
+                
                 try:
                     domain_index = all_unique_domains.index(domain_to_select)
                 except ValueError:
-                    domain_index = 0 # Default to "所有域名" if not found
+                    domain_index = 0
 
+                st.checkbox("锁定目标域名", key="domain_lock_status", on_change=lock_status_change)
                 selected_domain = st.selectbox(
                     "筛选目标域名:",
                     options=all_unique_domains,
                     index=domain_index,
-                    key='domain_selector_key'
+                    key='domain_selector',
+                    on_change=domain_selection_change
                 )
 
-                # If the lock is on, ensure the saved value is updated in case the user
-                # changes the selection while the lock is active.
-                if is_now_locked:
-                    st.session_state.locked_domain = selected_domain
-
-            # --- Part 3: Apply Filters to DataFrame ---
+            # --- Part 4: Apply Filters to DataFrame ---
             df_to_display = st.session_state.url_results_df.copy()
             if selected_source != "所有来源":
                 df_to_display = df_to_display[df_to_display["来源页面"] == selected_source]
-            if selected_domain != "所有域名":
-                df_to_display = df_to_display[df_to_display["目标域名"] == selected_domain]
+            
+            # The final domain used for filtering is the one we determined to display
+            final_selected_domain = domain_to_select
+            if final_selected_domain != "所有域名":
+                df_to_display = df_to_display[df_to_display["目标域名"] == final_selected_domain]
             
             # --- MODIFICATION BLOCK END ---
 
@@ -284,6 +307,7 @@ def main_app():
             st.download_button(label="📥 下载所有结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
 
     with tab2:
+        # --- (代码块无变化，保持原样) ---
         st.header("从Word文档 (.docx) 提取链接")
         uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"], key="docx_uploader")
         if uploaded_file is not None:
@@ -296,7 +320,7 @@ def main_app():
             csv_docx = convert_df_to_csv(df_docx_to_show)
             st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
 
-# --- 登录与路由逻辑 ---
+# --- 登录与路由逻辑 (保持不变) ---
 if 'users' not in st.session_state: st.session_state['users'] = {"admin": "1008611"}
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
