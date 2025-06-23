@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
-import mammoth 
+import mammoth
 import io
 import streamlit.components.v1 as components
 from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
@@ -12,7 +12,6 @@ from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 st.set_page_config(page_title="Time is Gold", layout="wide")
 
 # --- 样式定义 ---
-# 这个 markdown 块现在只包含通用样式
 st.markdown("""
 <style>
     .stButton>button {
@@ -142,47 +141,20 @@ def extract_links_from_docx(uploaded_file):
         return pd.DataFrame()
 
 # --- 主应用界面与逻辑 ---
-
 def main_app():
-    # ========= 新增：使用st.markdown和自定义CSS来创建更漂亮的标题 =========
     st.markdown(
         """
         <style>
             @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
-            
-            .title-container {
-                padding: 1.5rem 2rem;
-                border-radius: 15px;
-                text-align: center;
-                color: white;
-                background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364);
-                background-size: 400% 400%;
-                animation: gradientBG 15s ease infinite;
-                box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-                border: 1px solid rgba(255, 255, 255, 0.18);
-            }
-            
-            .title-container h1 {
-                font-family: 'Cinzel', serif;
-                font-size: 3rem;
-                letter-spacing: 0.1em;
-                text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.6);
-            }
-            
-            @keyframes gradientBG {
-                0% { background-position: 0% 50%; }
-                50% { background-position: 100% 50%; }
-                100% { background-position: 0% 50%; }
-            }
+            .title-container { padding: 1.5rem 2rem; border-radius: 15px; text-align: center; color: white; background: linear-gradient(-45deg, #0f2027, #203a43, #2c5364); background-size: 400% 400%; animation: gradientBG 15s ease infinite; box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); border: 1px solid rgba(255, 255, 255, 0.18); }
+            .title-container h1 { font-family: 'Cinzel', serif; font-size: 3rem; letter-spacing: 0.1em; text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.6); }
+            @keyframes gradientBG { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
         </style>
-
-        <div class="title-container">
-            <h1>TIME is GOLD</h1>
-        </div>
+        <div class="title-container"><h1>TIME is GOLD</h1></div>
         """,
         unsafe_allow_html=True
     )
-    st.write("") # 增加一些间距
+    st.write("")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -190,10 +162,8 @@ def main_app():
         st.header("从网页URL提取链接")
         url_input = st.text_area("输入网址 (每行一个)", height=150, placeholder="https://example.com/page1\nhttps://example.com/page2", key="url_input")
         
-        if 'url_results_df' not in st.session_state:
-            st.session_state.url_results_df = pd.DataFrame()
-        if 'submitted_urls' not in st.session_state:
-            st.session_state.submitted_urls = []
+        if 'url_results_df' not in st.session_state: st.session_state.url_results_df = pd.DataFrame()
+        if 'submitted_urls' not in st.session_state: st.session_state.submitted_urls = []
 
         if st.button("🚀 开始提取 (后端模式)", type="primary"):
             raw_urls = [u.strip() for u in url_input.split('\n') if u.strip()]
@@ -205,32 +175,17 @@ def main_app():
             else:
                 all_results = []
                 progress_bar = st.progress(0, text="准备开始抓取...")
-                
                 for i, url in enumerate(urls):
                     progress_bar.progress((i + 1) / len(urls), text=f"正在处理: {url}")
                     status, data = fetch_and_parse_url(url)
-                    
                     if status == 'success':
                         if not data:
-                            all_results.append({
-                                "来源页面": url, "文章上线时间": "N/A", "锚文本": "页面内未找到链接",
-                                "目标链接": "N/A", "目标域名": "N/A", "链接类型": "N/A",
-                            })
+                            all_results.append({ "来源页面": url, "文章上线时间": "N/A", "锚文本": "页面内未找到链接", "目标链接": "N/A", "目标域名": "N/A", "链接类型": "N/A" })
                         else:
                             all_results.extend(data)
-                    
                     elif status == 'failure':
-                        all_results.append({
-                            "来源页面": data,
-                            "文章上线时间": "---",
-                            "锚文本": "无法抓取，需要手动打开检查。",
-                            "目标链接": "无法抓取，需要手动打开检查。",
-                            "目标域名": "---",
-                            "链接类型": "---",
-                        })
-
+                        all_results.append({ "来源页面": data, "文章上线时间": "---", "锚文本": "无法抓取，需要手动打开检查。", "目标链接": "无法抓取，需要手动打开检查。", "目标域名": "---", "链接类型": "---" })
                 progress_bar.progress(1.0, text="所有任务完成！")
-
                 if not all_results:
                     st.warning("未能从任何网址中提取到有效链接或所有链接均抓取失败。")
                     st.session_state.url_results_df = pd.DataFrame()
@@ -242,77 +197,75 @@ def main_app():
         if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
-            df_to_filter = st.session_state.url_results_df.copy()
+            # --- MODIFICATION BLOCK START ---
             
-            # --- MODIFICATION START (URL Navigation) ---
-
-            submitted_urls = st.session_state.get('submitted_urls', [])
-            source_options = ["所有来源"] + submitted_urls
-
-            if 'current_source_index' not in st.session_state:
-                st.session_state.current_source_index = 0
-            if st.session_state.current_source_index >= len(source_options):
-                st.session_state.current_source_index = 0
-
             st.markdown("##### 筛选与导航")
             filter_cols = st.columns([2, 0.5, 0.5, 1.5])
 
+            # --- Part 1: Source Page Navigation ---
             with filter_cols[0]:
+                submitted_urls = st.session_state.get('submitted_urls', [])
+                source_options = ["所有来源"] + submitted_urls
+                if 'current_source_index' not in st.session_state:
+                    st.session_state.current_source_index = 0
+                if st.session_state.current_source_index >= len(source_options):
+                    st.session_state.current_source_index = 0
                 def on_selectbox_change():
                     st.session_state.current_source_index = source_options.index(st.session_state.selectbox_source)
-
-                selected_source = st.selectbox(
-                    "筛选来源页面:",
-                    options=source_options,
-                    index=st.session_state.current_source_index,
-                    key='selectbox_source',
-                    on_change=on_selectbox_change
-                )
-            
+                selected_source = st.selectbox("筛选来源页面:", options=source_options, index=st.session_state.current_source_index, key='selectbox_source', on_change=on_selectbox_change)
             with filter_cols[1]:
-                st.write("")
-                st.write("")
+                st.write(""); st.write("")
                 if st.button("⬅️ 上一个", use_container_width=True):
                     if st.session_state.current_source_index > 0:
-                        st.session_state.current_source_index -= 1
-                        st.rerun()
-
+                        st.session_state.current_source_index -= 1; st.rerun()
             with filter_cols[2]:
-                st.write("")
-                st.write("")
+                st.write(""); st.write("")
                 if st.button("下一个 ➡️", use_container_width=True):
                     if st.session_state.current_source_index < len(source_options) - 1:
-                        st.session_state.current_source_index += 1
-                        st.rerun()
-            
+                        st.session_state.current_source_index += 1; st.rerun()
+
+            # --- Part 2: Target Domain Filter with Lock ---
             with filter_cols[3]:
-                domain_options = ["所有域名"] + list(df_to_filter["目标域名"].unique())
-                selected_domain = st.selectbox("筛选目标域名:", domain_options)
+                lock_is_on = st.checkbox("锁定目标域名", key="domain_lock_status")
+                
+                # The dropdown list will always contain ALL possible domains to prevent the locked domain from disappearing.
+                all_unique_domains = ["所有域名"] + sorted([d for d in st.session_state.url_results_df["目标域名"].unique() if d not in ["---", "N/A"] and pd.notna(d)])
 
+                # Determine which domain should be selected in the dropdown
+                if lock_is_on:
+                    domain_to_select = st.session_state.get('locked_domain', "所有域名")
+                else:
+                    domain_to_select = st.session_state.get('domain_selector_key', "所有域名")
+                
+                try:
+                    domain_index = all_unique_domains.index(domain_to_select)
+                except ValueError:
+                    domain_index = 0
+
+                selected_domain = st.selectbox("筛选目标域名:", options=all_unique_domains, index=domain_index, key='domain_selector_key')
+
+                # Update the locked state after the selectbox is drawn
+                if lock_is_on:
+                    st.session_state.locked_domain = selected_domain
+                elif 'locked_domain' in st.session_state:
+                    del st.session_state['locked_domain']
+
+            # --- Part 3: Apply Filters to DataFrame ---
+            df_to_display = st.session_state.url_results_df.copy()
             if selected_source != "所有来源":
-                df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
-            
+                df_to_display = df_to_display[df_to_display["来源页面"] == selected_source]
             if selected_domain != "所有域名":
-                df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
+                df_to_display = df_to_display[df_to_display["目标域名"] == selected_domain]
+            
+            # --- MODIFICATION BLOCK END ---
 
-            # --- MODIFICATION END ---
-
-            gb = GridOptionsBuilder.from_dataframe(df_to_filter)
+            gb = GridOptionsBuilder.from_dataframe(df_to_display) # Use the fully filtered dataframe
             gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False)
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=300)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
             grid_options = gb.build()
 
-            AgGrid(
-                df_to_filter,
-                gridOptions=grid_options,
-                allow_unsafe_jscode=True, 
-                height=600,
-                width='100%',
-                theme='streamlit',
-                enable_enterprise_modules=False,
-                key='result_grid' 
-            )
+            AgGrid(df_to_display, gridOptions=grid_options, allow_unsafe_jscode=True, height=600, width='100%', theme='streamlit', enable_enterprise_modules=False, key='result_grid' )
             
             csv = convert_df_to_csv(st.session_state.url_results_df) 
             st.download_button(label="📥 下载所有结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
@@ -320,20 +273,17 @@ def main_app():
     with tab2:
         st.header("从Word文档 (.docx) 提取链接")
         uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"], key="docx_uploader")
-        
         if uploaded_file is not None:
             with st.spinner("正在解析文档..."):
                 st.session_state.docx_df = extract_links_from_docx(uploaded_file)
-        
         if 'docx_df' in st.session_state and not st.session_state.docx_df.empty:
             df_docx_to_show = st.session_state.docx_df
             st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
             st.dataframe(df_docx_to_show, use_container_width=True)
-            
             csv_docx = convert_df_to_csv(df_docx_to_show)
             st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
 
-# --- 登录与路由逻辑 (保持不变) ---
+# --- 登录与路由逻辑 ---
 if 'users' not in st.session_state: st.session_state['users'] = {"admin": "1008611"}
 if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
 
