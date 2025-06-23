@@ -244,17 +244,58 @@ def main_app():
             
             df_to_filter = st.session_state.url_results_df.copy()
             
-            col1, col2 = st.columns(2)
-            with col1:
-                source_options = ["所有来源"] + st.session_state.submitted_urls
-                selected_source = st.selectbox("筛选来源页面:", source_options)
-                if selected_source != "所有来源":
-                    df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
-            with col2:
+            # --- MODIFICATION START (URL Navigation) ---
+
+            submitted_urls = st.session_state.get('submitted_urls', [])
+            source_options = ["所有来源"] + submitted_urls
+
+            if 'current_source_index' not in st.session_state:
+                st.session_state.current_source_index = 0
+            if st.session_state.current_source_index >= len(source_options):
+                st.session_state.current_source_index = 0
+
+            st.markdown("##### 筛选与导航")
+            filter_cols = st.columns([2, 0.5, 0.5, 1.5])
+
+            with filter_cols[0]:
+                def on_selectbox_change():
+                    st.session_state.current_source_index = source_options.index(st.session_state.selectbox_source)
+
+                selected_source = st.selectbox(
+                    "筛选来源页面:",
+                    options=source_options,
+                    index=st.session_state.current_source_index,
+                    key='selectbox_source',
+                    on_change=on_selectbox_change
+                )
+            
+            with filter_cols[1]:
+                st.write("")
+                st.write("")
+                if st.button("⬅️ 上一个", use_container_width=True):
+                    if st.session_state.current_source_index > 0:
+                        st.session_state.current_source_index -= 1
+                        st.rerun()
+
+            with filter_cols[2]:
+                st.write("")
+                st.write("")
+                if st.button("下一个 ➡️", use_container_width=True):
+                    if st.session_state.current_source_index < len(source_options) - 1:
+                        st.session_state.current_source_index += 1
+                        st.rerun()
+            
+            with filter_cols[3]:
                 domain_options = ["所有域名"] + list(df_to_filter["目标域名"].unique())
                 selected_domain = st.selectbox("筛选目标域名:", domain_options)
-                if selected_domain != "所有域名":
-                    df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
+
+            if selected_source != "所有来源":
+                df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
+            
+            if selected_domain != "所有域名":
+                df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
+
+            # --- MODIFICATION END ---
 
             gb = GridOptionsBuilder.from_dataframe(df_to_filter)
             gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False)
