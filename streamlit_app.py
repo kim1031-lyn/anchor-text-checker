@@ -139,7 +139,24 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀Time is Gold ")
+    # ========= 修改部分：使用st.markdown来创建更漂亮的标题 =========
+    st.markdown(
+        """
+        <div style="
+            background-color: #f0f8ff; 
+            padding: 20px; 
+            border-radius: 10px; 
+            text-align: center;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        ">
+            <h1 style="color: #0047ab; font-family: 'Garamond', serif; font-size: 3em;">
+                🚀 TIME is Gold
+            </h1>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    st.write("") # 增加一些间距
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
