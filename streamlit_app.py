@@ -197,8 +197,6 @@ def main_app():
         if not st.session_state.url_results_df.empty:
             st.success(f"处理完成！共生成 {len(st.session_state.url_results_df)} 条记录。")
             
-            # --- MODIFICATION BLOCK START (Definitive Fix) ---
-            
             st.markdown("##### 筛选与导航")
 
             # --- Part 1: Initialize all needed state variables ---
@@ -218,15 +216,13 @@ def main_app():
 
             def handle_lock_change():
                 st.session_state.is_locked = st.session_state.lock_widget
-                # When locking, ensure the canonical selection is set
                 if st.session_state.is_locked:
                     st.session_state.domain_selection = st.session_state.domain_selector_widget
 
             # --- Part 3: Prepare data for widgets ---
             source_options = ["所有来源"] + st.session_state.get('submitted_urls', [])
-            st.session_state.source_options = source_options # Store for callback access
+            st.session_state.source_options = source_options
 
-            # CRITICAL FIX: The domain options list is ALWAYS generated from the original, complete dataframe
             domain_options = ["所有域名"] + sorted(st.session_state.url_results_df["目标域名"].dropna().unique().tolist())
 
             if st.session_state.current_source_index >= len(source_options):
@@ -256,7 +252,6 @@ def main_app():
                         st.session_state.current_source_index += 1
                         st.rerun()
             with filter_cols[3]:
-                # The value to show is determined by the lock state
                 if st.session_state.is_locked:
                     value_to_show = st.session_state.domain_selection
                 else:
@@ -284,8 +279,6 @@ def main_app():
             final_domain_for_filtering = st.session_state.domain_selection if st.session_state.is_locked else selected_domain
             if final_domain_for_filtering != "所有域名":
                 df_to_display = df_to_display[df_to_display["目标域名"] == final_domain_for_filtering]
-            
-            # --- MODIFICATION BLOCK END ---
 
             gb = GridOptionsBuilder.from_dataframe(df_to_display)
             gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=False)
@@ -293,4 +286,78 @@ def main_app():
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=450)
             grid_options = gb.build()
 
-            AgGrid(df_to_display, gridOptions=grid_options, allow_unsafe_j
+            AgGrid(
+                df_to_display, 
+                gridOptions=grid_options, 
+                allow_unsafe_jscode=True, 
+                height=600, 
+                width='100%', 
+                theme='streamlit', 
+                enable_enterprise_modules=False, 
+                key='result_grid'
+            )
+            
+            csv = convert_df_to_csv(st.session_state.url_results_df) 
+            st.download_button(
+                label="📥 下载所有结果 (CSV)", 
+                data=csv, 
+                file_name="url_link_results.csv", 
+                mime="text/csv"
+            )
+
+    with tab2:
+        st.header("从Word文档 (.docx) 提取链接")
+        uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"], key="docx_uploader")
+        if uploaded_file is not None:
+            with st.spinner("正在解析文档..."):
+                st.session_state.docx_df = extract_links_from_docx(uploaded_file)
+        if 'docx_df' in st.session_state and not st.session_state.docx_df.empty:
+            df_docx_to_show = st.session_state.docx_df
+            st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
+            st.dataframe(df_docx_to_show, use_container_width=True)
+            csv_docx = convert_df_to_csv(df_docx_to_show)
+            st.download_button(
+                label="📥 下载结果 (CSV)", 
+                data=csv_docx, 
+                file_name="docx_link_results.csv", 
+                mime="text/csv", 
+                key="docx_downloader"
+            )
+
+# --- 登录与路由逻辑 (保持不变) ---
+if 'users' not in st.session_state: st.session_state['users'] = {"admin": "1008611"}
+if 'logged_in' not in st.session_state: st.session_state['logged_in'] = False
+
+def login():
+    st.title("登录")
+    username = st.text_input("用户名")
+    password = st.text_input("密码", type="password")
+    if st.button("登录"):
+        if username in st.session_state['users'] and st.session_state['users'][username] == password:
+            st.session_state['logged_in'] = True
+            st.success(f"欢迎 {username}！")
+            st.rerun()
+        else:
+            st.error("用户名或密码错误")
+
+def add_user():
+    st.title("添加新用户")
+    new_user = st.text_input("新用户名")
+    new_pass = st.text_input("新密码", type="password")
+    if st.button("添加用户"):
+        if new_user in st.session_state['users']: st.warning("用户已存在！")
+        elif not new_user or not new_pass: st.warning("用户名和密码不能为空！")
+        else:
+            st.session_state['users'][new_user] = new_pass
+            st.success(f"添加用户 {new_user} 成功！")
+
+if not st.session_state['logged_in']:
+    login()
+else:
+    st.sidebar.title("管理菜单")
+    option = st.sidebar.selectbox("选择操作", ["主页", "添加用户", "退出登录"])
+    if option == "主页": main_app()
+    elif option == "添加用户": add_user()
+    elif option == "退出登录":
+        st.session_state['logged_in'] = False
+        st.rerun()
