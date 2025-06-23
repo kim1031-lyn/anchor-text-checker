@@ -77,27 +77,19 @@ def fetch_and_parse_url(url):
 
 def extract_links_from_docx(uploaded_file):
     try:
-        # 1. 使用mammoth将word文档内容转换为HTML
         result = mammoth.convert_to_html(uploaded_file)
         html_content = result.value
-        
-        # 2. 使用BeautifulSoup解析生成的HTML
         soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # 3. 从HTML中提取所有<a>标签
         links = []
         for a in soup.find_all('a', href=True):
             text = a.get_text(strip=True)
             href = a.get('href')
             if text and href:
                 links.append({"锚文本": text, "链接地址": href})
-
         if not links:
             st.warning("在文档中未找到任何链接。")
             return pd.DataFrame()
-
         return pd.DataFrame(links)
-
     except Exception as e:
         st.error(f"解析Word文档失败: {e}")
         return pd.DataFrame()
@@ -151,19 +143,30 @@ def main_app():
             csv = convert_df_to_csv(df_to_show)
             st.download_button(label="📥 下载当前筛选结果 (CSV)", data=csv, file_name="url_link_results.csv", mime="text/csv")
 
+    # ========= 修正部分：调整了Tab 2的逻辑 =========
     with tab2:
         st.header("从Word文档 (.docx) 提取链接")
-        uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"])
+        uploaded_file = st.file_uploader("上传一个.docx文件", type=["docx"], key="docx_uploader")
         
+        # 只有当文件被上传时，才进行解析和显示
         if uploaded_file is not None:
             with st.spinner("正在解析文档..."):
-                docx_df = extract_links_from_docx(uploaded_file)
-                if not docx_df.empty:
-                    st.success(f"解析完成！共找到 {len(docx_df)} 条链接。")
-                    st.dataframe(docx_df, use_container_width=True)
-                    
-                    csv_docx = convert_df_to_csv(docx_df)
-                    st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv")
+                # 将解析结果存储在 session_state 中，防止重复解析
+                st.session_state.docx_df = extract_links_from_docx(uploaded_file)
+        
+        # 只有当解析结果存在且不为空时，才显示表格和下载按钮
+        if 'docx_df' in st.session_state and not st.session_state.docx_df.empty:
+            df_docx_to_show = st.session_state.docx_df
+            st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
+            st.dataframe(df_docx_to_show, use_container_width=True)
+            
+            # 确保 convert_df_to_csv 函数在这里也可用
+            @st.cache_data
+            def convert_df_to_csv(df): return df.to_csv(index=False).encode('utf-8-sig')
+
+            csv_docx = convert_df_to_csv(df_docx_to_show)
+            st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
+
 
 # --- 登录与路由逻辑 (保持不变) ---
 if 'users' not in st.session_state: st.session_state['users'] = {"admin": "1008611"}
