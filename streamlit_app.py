@@ -25,6 +25,13 @@ js_copy_button_renderer = JsCode("""
 class CopyButtonRenderer {
     eGui;
     init(params) {
+        // 如果单元格没有值，则不渲染任何东西
+        if (params.value === null || params.value === undefined) {
+            this.eGui = document.createElement('span');
+            this.eGui.innerText = '';
+            return;
+        }
+
         this.eGui = document.createElement('div');
         this.eGui.style.display = 'flex';
         this.eGui.style.alignItems = 'center';
@@ -56,11 +63,10 @@ class CopyButtonRenderer {
 }
 """)
 
-# --- 核心功能与辅助函数 ---
 
+# --- 核心功能与辅助函数 ---
 @st.cache_data
 def convert_df_to_csv(df):
-    """将DataFrame转换为可下载的CSV文件。"""
     return df.to_csv(index=False).encode('utf-8-sig')
 
 def get_domain_from_url(url):
@@ -133,7 +139,7 @@ def extract_links_from_docx(uploaded_file):
 # --- 主应用界面与逻辑 ---
 
 def main_app():
-    st.title("🚀 CheckCheckCheck Pro (稳定版)")
+    st.title("🚀 CheckCheckCheck Pro (最终版)")
 
     tab1, tab2 = st.tabs(["🔗 网址锚文本提取", "📄 Word文档链接提取"])
 
@@ -160,24 +166,37 @@ def main_app():
                 else:
                     st.session_state.url_results_df = pd.DataFrame(all_results)
         
+        # --- 恢复筛选功能并结合AG Grid展示 ---
         if 'url_results_df' in st.session_state and not st.session_state.url_results_df.empty:
             st.success(f"提取完成！共找到 {len(st.session_state.url_results_df)} 条锚文本链接。")
-            df_to_show = st.session_state.url_results_df.copy()
             
-            gb = GridOptionsBuilder.from_dataframe(df_to_show)
-            gb.configure_default_column(
-                resizable=True, wrapText=True, autoHeight=True, 
-                sortable=True, filter=True
-            )
+            df_to_filter = st.session_state.url_results_df.copy()
+            
+            # ========= 恢复下拉选择框进行筛选 =========
+            col1, col2 = st.columns(2)
+            with col1:
+                source_options = ["所有来源"] + list(df_to_filter["来源页面"].unique())
+                selected_source = st.selectbox("筛选来源页面:", source_options)
+                if selected_source != "所有来源":
+                    df_to_filter = df_to_filter[df_to_filter["来源页面"] == selected_source]
+            with col2:
+                domain_options = ["所有域名"] + list(df_to_filter["目标域名"].unique())
+                selected_domain = st.selectbox("筛选目标域名:", domain_options)
+                if selected_domain != "所有域名":
+                    df_to_filter = df_to_filter[df_to_filter["目标域名"] == selected_domain]
+
+            # AG Grid配置
+            gb = GridOptionsBuilder.from_dataframe(df_to_filter)
+            gb.configure_default_column(resizable=True, wrapText=True, autoHeight=True, sortable=True)
             gb.configure_column("锚文本", cellRenderer=js_copy_button_renderer, width=250)
             gb.configure_column("目标链接", cellRenderer=js_copy_button_renderer, width=400)
             grid_options = gb.build()
 
-            st.info("💡 使用方法：将鼠标悬停在列标题上，会出现一个三条杠的菜单图标，点击即可进行筛选。")
+            # 显示AG Grid表格
             AgGrid(
-                df_to_show,
+                df_to_filter,
                 gridOptions=grid_options,
-                allow_unsafe_jscode=True,
+                allow_unsafe_jscode=True, 
                 height=600,
                 width='100%',
                 theme='streamlit',
@@ -200,7 +219,7 @@ def main_app():
             st.success(f"解析完成！共找到 {len(df_docx_to_show)} 条链接。")
             st.dataframe(df_docx_to_show, use_container_width=True)
             
-            csv_docx = convert_df_to_csv(df_docx_to_show) # 使用全局定义的函数
+            csv_docx = convert_df_to_csv(df_docx_to_show)
             st.download_button(label="📥 下载结果 (CSV)", data=csv_docx, file_name="docx_link_results.csv", mime="text/csv", key="docx_downloader")
 
 # --- 登录与路由逻辑 (保持不变) ---
