@@ -2,5 +2,10 @@ streamlit
 requests
 beautifulsoup4
 pandas
+lxml
 mammoth
-streamlit-aggrid
+st-aggrid
+selenium
+webdriver_manager
+urllib3
+python-dateutil
